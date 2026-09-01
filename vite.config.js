@@ -8,4 +8,5 @@ export default defineConfig({
     vue(),
     tailwindcss(),
   ],
+  base: '/inventory-management/', // <-- Gantikan dengan nama repo GitHub kau
 })
