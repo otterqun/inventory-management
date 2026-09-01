@@ -264,7 +264,7 @@ const getCategoryColor = (cat) => {
     </div>
 
     <header class="mb-8 text-center md:text-left">
-      <h1 class="text-3xl font-bold text-slate-800">🛒 Dapur POS</h1>
+      <h1 class="text-3xl font-bold text-slate-800">🛒 Inventoy Keeper</h1>
       <p class="text-slate-500">Sistem Pemantauan Stok Rumah</p>
     </header>
 
