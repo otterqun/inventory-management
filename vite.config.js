@@ -8,5 +8,5 @@ export default defineConfig({
     vue(),
     tailwindcss(),
   ],
-  base: 'inventory-management', // <-- Tukar kat sini
+  base: 'inventory-management',
 })
