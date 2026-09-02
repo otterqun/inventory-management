@@ -40,14 +40,24 @@ const editCategorySelection = ref('')
 // --- Sistem Log & Toast ---
 const addLog = (type, name) => {
   const now = new Date()
-  const time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+
+  // Format masa: HH:mm (cth: 08:30 PM atau 20:30)
+  const time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+
+  // Format tarikh: dd/mm/yyyy
+  const day = String(now.getDate()).padStart(2, '0')
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const year = now.getFullYear()
+  const dateFormatted = `${day}/${month}/${year}`
+
   activityLogs.value.unshift({
     id: Date.now(),
     type,
     name,
-    time
+    timestamp: `[ ${time} | ${dateFormatted} ]`
   })
-  // Hadkan kepada 30 transaksi terkini sahaja
+
+  // Hadkan simpanan kepada 30 rekod terkini
   if (activityLogs.value.length > 30) {
     activityLogs.value.pop()
   }
