@@ -1,18 +1,16 @@
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue'
-import { Html5Qrcode } from 'html5-qrcode'
+import { ref, computed, watch } from 'vue'
+import { Html5Qrcode} from 'html5-qrcode'
 import PieChart from '../components/PieChart.vue'
 import ScannerBox from '../components/ScannerBox.vue'
 import InventoryList from '../components/InventoryList.vue'
 import InventoryModals from '../components/InventoryModals.vue'
 import ActivityLog from '../components/ActivityLog.vue'
 
-// --- State Utama & LocalStorage ---
 const inventory = ref(JSON.parse(localStorage.getItem('inv_items') || '[]'))
 const categories = ref(JSON.parse(localStorage.getItem('inv_cats') || '["Kering", "Basah", "Mandian", "Lain-lain"]'))
 const activityLogs = ref(JSON.parse(localStorage.getItem('inv_logs') || '[]'))
 
-// Auto-sync ke LocalStorage
 watch(inventory, (val) => localStorage.setItem('inv_items', JSON.stringify(val)), { deep: true })
 watch(categories, (val) => localStorage.setItem('inv_cats', JSON.stringify(val)), { deep: true })
 watch(activityLogs, (val) => localStorage.setItem('inv_logs', JSON.stringify(val)), { deep: true })
@@ -24,7 +22,6 @@ let isProcessing = false
 const activeTab = ref('Semua') 
 const toastMessage = ref('')
 
-// State Modals
 const showItemModal = ref(false)
 const pendingBarcode = ref('')
 const newItemName = ref('')
@@ -37,38 +34,27 @@ const showEditModal = ref(false)
 const editingItem = ref(null)
 const editCategorySelection = ref('')
 
-// --- Sistem Log & Toast ---
 const addLog = (type, name) => {
   const now = new Date()
-
-  // Format masa: HH:mm (cth: 08:30 PM atau 20:30)
   const time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
-
-  // Format tarikh: dd/mm/yyyy
   const day = String(now.getDate()).padStart(2, '0')
   const month = String(now.getMonth() + 1).padStart(2, '0')
   const year = now.getFullYear()
-  const dateFormatted = `${day}/${month}/${year}`
 
   activityLogs.value.unshift({
     id: Date.now(),
     type,
     name,
-    timestamp: `[ ${time} | ${dateFormatted} ]`
+    timestamp: `[ ${time} | ${day}/${month}/${year} ]`
   })
-
-  // Hadkan simpanan kepada 30 rekod terkini
-  if (activityLogs.value.length > 30) {
-    activityLogs.value.pop()
-  }
+  if (activityLogs.value.length > 30) activityLogs.value.pop()
 }
 
 const showToast = (msg) => {
   toastMessage.value = msg
-  setTimeout(() => { toastMessage.value = '' }, 3000)
+  setTimeout(() => { toastMessage.value = '' }, 2500)
 }
 
-// --- Pengurusan Kategori ---
 const openCategoryModal = () => {
   newCategoryName.value = ''
   showCategoryModal.value = true
@@ -80,10 +66,10 @@ const saveNewCategory = () => {
     if (!categories.value.includes(name)) {
       categories.value.push(name)
       if (showItemModal.value) newItemCategory.value = name 
-      showToast(`Kategori '${name}' berjaya ditambah!`)
+      showToast(`Kategori '${name}' ditambah`)
       showCategoryModal.value = false
     } else {
-      showToast(`Gagal: Kategori '${name}' sudah wujud.`)
+      showToast(`Kategori '${name}' sudah wujud`)
     }
   }
 }
@@ -91,15 +77,14 @@ const saveNewCategory = () => {
 const deleteCategory = (cat) => {
   const isUsed = inventory.value.some(item => item.category === cat)
   if (isUsed) {
-    showToast(`Gagal: Kategori '${cat}' tak kosong! Alih/buang barang dulu.`)
+    showToast(`Kategori '${cat}' masih mempunyai item`)
   } else {
     categories.value = categories.value.filter(c => c !== cat)
     if (activeTab.value === cat) activeTab.value = 'Semua'
-    showToast(`Kategori '${cat}' dipadam.`)
+    showToast(`Kategori dipadam`)
   }
 }
 
-// --- Pengurusan Edit Kategori Barang ---
 const openEditModal = (item) => {
   editingItem.value = item
   editCategorySelection.value = item.category
@@ -109,13 +94,12 @@ const openEditModal = (item) => {
 const saveEditCategory = () => {
   if (editingItem.value) {
     editingItem.value.category = editCategorySelection.value
-    showToast(`Kategori ${editingItem.value.name} dikemaskini.`)
+    showToast(`Kategori ${editingItem.value.name} dikemaskini`)
     showEditModal.value = false
     editingItem.value = null
   }
 }
 
-// --- Pengurusan Scanner & Inventori ---
 const filteredInventory = computed(() => {
   if (activeTab.value === 'Semua') return inventory.value
   return inventory.value.filter(item => item.category === activeTab.value)
@@ -130,7 +114,7 @@ const handleScan = (scannedBarcode) => {
   if (existingItem) {
     existingItem.qty++
     addLog('TAMBAH', `${existingItem.name} (+1)`)
-    showToast(`${existingItem.name} ditambah! (Kuantiti: ${existingItem.qty})`)
+    showToast(`${existingItem.name} (+1)`)
     setTimeout(() => { isProcessing = false }, 2000)
   } else {
     pendingBarcode.value = scannedBarcode
@@ -148,8 +132,8 @@ const saveNewItem = () => {
       category: newItemCategory.value,
       qty: 1
     })
-    addLog('DAFTAR', `${newItemName.value} (Daftar Baharu)`)
-    showToast(`${newItemName.value} didaftarkan!`)
+    addLog('DAFTAR', `${newItemName.value}`)
+    showToast(`Item didaftarkan`)
     closeItemModal()
   }
 }
@@ -171,8 +155,13 @@ const toggleScan = async () => {
   } else {
     isScanning.value = true
     html5QrCode = new Html5Qrcode("reader")
-    const config = { fps: 10, qrbox: { width: 250, height: 250 }, aspectRatio: 1.0 }
-    
+
+    // Kotak viewfinder melintang (lebar 300px, tinggi 100px)
+    const config = {
+      fps: 15,
+      qrbox: { width: 300, height: 100 }
+    }
+
     try {
       await html5QrCode.start(
         { facingMode: "environment" },
@@ -199,24 +188,24 @@ const reduceQty = (item) => {
     addLog('TOLAK', `${item.name} (-1)`)
   } else {
     inventory.value = inventory.value.filter(i => i.id !== item.id)
-    addLog('BUANG', `${item.name} (Keluarkan Stok)`)
-    showToast(`${item.name} dibuang.`)
+    addLog('BUANG', `${item.name}`)
+    showToast(`${item.name} dikeluarkan`)
   }
 }
 
 const clearLogs = () => {
   activityLogs.value = []
   localStorage.removeItem('inv_logs')
-  showToast('Sejarah aktiviti dikosongkan.')
+  showToast('Log dikosongkan')
 }
 </script>
 
 <template>
-  <div class="min-h-screen bg-slate-100 p-4 md:p-8 font-sans relative">
+  <main class="min-h-screen bg-[#fafafa] p-4 sm:p-6 md:p-8 font-sans antialiased text-zinc-900 relative">
     
-    <!-- Toast Message -->
-    <div v-if="toastMessage" class="fixed top-4 left-1/2 -translate-x-1/2 bg-slate-800 text-white px-6 py-3 rounded-full shadow-lg z-[100] flex items-center gap-2 transition-all animate-bounce">
-      <span class="text-emerald-400">✓</span> {{ toastMessage }}
+    <!-- Minimalist Toast -->
+    <div v-if="toastMessage" class="fixed top-4 left-1/2 -translate-x-1/2 bg-zinc-900 text-white text-xs font-mono px-4 py-2 rounded-lg shadow-lg z-[100] border border-zinc-800">
+      {{ toastMessage }}
     </div>
 
     <!-- Modals -->
@@ -241,9 +230,9 @@ const clearLogs = () => {
     />
 
     <!-- Dashboard Container -->
-    <div class="max-w-6xl mx-auto space-y-6 pb-10">
+    <div class="max-w-6xl mx-auto space-y-6">
       
-      <!-- GRID ATAS (Scanner & Inventori) -->
+      <!-- Baris Atas -->
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
         <ScannerBox 
           :is-scanning="isScanning" 
@@ -262,22 +251,17 @@ const clearLogs = () => {
         />
       </div>
 
-      <!-- GRID BAWAH (Carta & Sejarah) -->
+      <!-- Baris Bawah -->
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
         <PieChart :items="inventory" :categories="categories" />
         <ActivityLog :logs="activityLogs" @clear-logs="clearLogs" />
       </div>
 
     </div>
-  </div>
+  </main>
 </template>
 
 <style>
-.hide-scrollbar::-webkit-scrollbar {
-  display: none;
-}
-.hide-scrollbar {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
+.hide-scrollbar::-webkit-scrollbar { display: none; }
+.hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 </style>

@@ -1,14 +1,33 @@
 <template>
-  <header class="bg-white shadow-sm p-4 mb-6">
-    <div class="max-w-7xl mx-auto flex justify-between items-center">
-      <div>
-        <h1 class="text-2xl font-bold text-gray-800">🛒 Inventory Keeper</h1>
-        <p class="text-sm text-gray-500">Sistem Pemantauan Stok Rumah</p>
-      </div>
-      <!-- Link navigasi ke page lain -->
-      <nav class="flex gap-4">
-        <router-link to="/" class="text-blue-600 font-semibold hover:underline">Utama</router-link>
-        <router-link to="/page-baru" class="text-blue-600 font-semibold hover:underline">Page Baru</router-link>
+  <header class="bg-white border-b border-zinc-200 sticky top-0 z-40">
+    <div class="max-w-6xl mx-auto px-4 sm:px-6 py-3.5 flex justify-between items-center">
+      <router-link to="/" class="flex items-center gap-2.5 no-underline">
+        <span class="w-2.5 h-2.5 rounded-full bg-zinc-900 inline-block"></span>
+        <span class="text-sm font-semibold tracking-tight text-zinc-900">Inventory Keeper</span>
+      </router-link>
+
+      <nav class="flex items-center gap-1">
+        <router-link 
+          to="/" 
+          class="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+          :class="$route.path === '/' ? 'bg-zinc-900 text-white' : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100'"
+        >
+          Dashboard
+        </router-link>
+        <router-link 
+          to="/tetapan" 
+          class="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+          :class="$route.path === '/tetapan' ? 'bg-zinc-900 text-white' : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100'"
+        >
+          Tetapan
+        </router-link>
+        <router-link 
+          to="/cerita" 
+          class="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+          :class="$route.path === '/cerita' ? 'bg-zinc-900 text-white' : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100'"
+        >
+          Nota Dev
+        </router-link>
       </nav>
     </div>
   </header>
