@@ -1,11 +1,15 @@
 <script setup>
 import { ref, nextTick, onBeforeUnmount } from 'vue'
+import { useRouter } from 'vue-router'
 import QRCode from 'qrcode'
 import LZString from 'lz-string'
 import { Html5Qrcode } from 'html5-qrcode'
 
+const router = useRouter()
+
 const showQrModal = ref(false)
 const showScannerModal = ref(false)
+const showConfirmDeleteModal = ref(false) // State modal pengesahan padam
 const toastMsg = ref('')
 const qrCanvasRef = ref(null)
 const dataSummary = ref({ itemsCount: 0, rawSize: '0 B', compressedSize: '0 B' })
@@ -28,7 +32,6 @@ const openGenerateQr = async () => {
     return
   }
 
-  // Bungkus payload dengan penanda INV_SYNC_V1
   const payload = JSON.stringify({
     version: 1,
     items: parsedItems,
@@ -36,7 +39,6 @@ const openGenerateQr = async () => {
     timestamp: Date.now()
   })
 
-  // Mampatkan teks JSON
   const compressed = LZString.compressToEncodedURIComponent(payload)
   const fullSyncPayload = `INV_SYNC:${compressed}`
 
@@ -124,9 +126,10 @@ const handleReceivedPayload = async (rawCode) => {
 
       await closeImportScanner()
       triggerToast(`Berjaya! ${data.items.length} item diterima ke peranti ini.`)
+      
       setTimeout(() => {
-        window.location.reload()
-      }, 1200)
+        router.push('/')
+      }, 1000)
     }
   } catch (err) {
     console.error('Gagal ekstrak data:', err)
@@ -134,7 +137,7 @@ const handleReceivedPayload = async (rawCode) => {
   }
 }
 
-// Tindakan Selenggara Asal
+// Tindakan Selenggara
 const loadSampleData = () => {
   const sampleCats = ["Kering", "Basah", "Mandian", "Lain-lain"]
   const sampleItems = [
@@ -147,14 +150,20 @@ const loadSampleData = () => {
   triggerToast('Data contoh telah dimuatkan.')
 }
 
-const clearAllData = () => {
-  if (confirm('Adakah anda pasti mahu memadam semua data inventori dan log?')) {
-    localStorage.removeItem('inv_items')
-    localStorage.removeItem('inv_cats')
-    localStorage.removeItem('inv_logs')
-    triggerToast('Semua data dipadam.')
-    setTimeout(() => { window.location.reload() }, 800)
-  }
+const triggerDeleteConfirmation = () => {
+  showConfirmDeleteModal.value = true
+}
+
+const executeDeleteAllData = () => {
+  localStorage.removeItem('inv_items')
+  localStorage.removeItem('inv_cats')
+  localStorage.removeItem('inv_logs')
+  showConfirmDeleteModal.value = false
+  triggerToast('Semua data dipadam.')
+  
+  setTimeout(() => { 
+    router.push('/')
+  }, 600)
 }
 
 onBeforeUnmount(() => {
@@ -182,7 +191,6 @@ onBeforeUnmount(() => {
         </div>
 
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-          <!-- Butang Papar QR (Peranti Penghantar) -->
           <div class="p-3.5 rounded-xl border border-zinc-200 bg-zinc-50/50 flex flex-col justify-between space-y-3">
             <div>
               <p class="text-xs font-semibold text-zinc-800">1. Hantar Data (Laptop / Sumber)</p>
@@ -196,7 +204,6 @@ onBeforeUnmount(() => {
             </button>
           </div>
 
-          <!-- Butang Imbas QR (Peranti Penerima) -->
           <div class="p-3.5 rounded-xl border border-zinc-200 bg-zinc-50/50 flex flex-col justify-between space-y-3">
             <div>
               <p class="text-xs font-semibold text-zinc-800">2. Terima Data (Telefon / Sasaran)</p>
@@ -212,7 +219,7 @@ onBeforeUnmount(() => {
         </div>
       </section>
 
-      <!-- Kad Pengurusan Data Asal -->
+      <!-- Kad Pengurusan Data -->
       <section class="bg-white border border-zinc-200 rounded-2xl p-5 shadow-sm space-y-3">
         <div class="border-b border-zinc-100 pb-3">
           <h2 class="text-xs font-bold font-mono tracking-wider uppercase text-zinc-800">Penyelenggaraan Storan</h2>
@@ -237,13 +244,38 @@ onBeforeUnmount(() => {
             <p class="text-[11px] text-zinc-500">Padamkan data LocalStorage dan kembalikan kepada kosong.</p>
           </div>
           <button 
-            @click="clearAllData"
+            @click="triggerDeleteConfirmation"
             class="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-mono transition-colors cursor-pointer"
           >
             Padam Data
           </button>
         </div>
       </section>
+    </div>
+
+    <!-- Modal Pengesahan Padam Data (Gaya Custom) -->
+    <div v-if="showConfirmDeleteModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+      <div class="bg-white rounded-2xl border border-zinc-200 shadow-xl max-w-sm w-full p-6 space-y-4">
+        <div>
+          <h3 class="text-sm font-semibold tracking-tight text-zinc-900">Padam Semua Rekod?</h3>
+          <p class="text-xs text-zinc-500 mt-1">Tindakan ini akan mengosongkan inventori, senarai kategori, serta rekod aktiviti sepenuhnya daripada peranti ini.</p>
+        </div>
+
+        <div class="flex items-center justify-end gap-2 pt-2 border-t border-zinc-100 font-mono text-xs">
+          <button 
+            @click="showConfirmDeleteModal = false" 
+            class="px-3 py-1.5 text-zinc-600 hover:text-zinc-900 cursor-pointer"
+          >
+            Batal
+          </button>
+          <button 
+            @click="executeDeleteAllData" 
+            class="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-sans font-medium rounded-lg transition-colors cursor-pointer"
+          >
+            Ya, Padam
+          </button>
+        </div>
+      </div>
     </div>
 
     <!-- Modal Paparan QR Kod (Penghantar) -->
