@@ -25,6 +25,45 @@ const getCategoryColor = () => {
   return 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200 border border-zinc-200/60'
 }
 
+// Logik kira baki hari mengikut peraturan:
+// <= 2 hari (termasuk dah lepas) -> Merah
+// 3 hingga 5 hari               -> Kuning
+// > 5 hari                       -> Hijau
+// Format paparan: "[nombor] hari" (cth: "2 hari", "-1 hari")
+const getExpiryStatus = (expiryDate) => {
+  if (!expiryDate) return null
+
+  const now = new Date()
+  now.setHours(0, 0, 0, 0)
+  const target = new Date(expiryDate)
+  target.setHours(0, 0, 0, 0)
+
+  const diffTime = target - now
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+
+  // Lagi 2 hari atau dah luput -> MERAH
+  if (diffDays <= 2) {
+    return {
+      text: `${diffDays} hari sebelum expired`,
+      badgeClass: 'bg-rose-50 text-rose-700 border-rose-200 font-semibold'
+    }
+  } 
+  // Lagi 3 hingga 5 hari -> KUNING
+  else if (diffDays <= 5) {
+    return {
+      text: `${diffDays} hari sebelum expired`,
+      badgeClass: 'bg-amber-50 text-amber-700 border-amber-200 font-semibold'
+    }
+  } 
+  // Lebih 5 hari -> HIJAU
+  else {
+    return {
+      text: `${diffDays} hari sebelum expired`,
+      badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200'
+    }
+  }
+}
+
 const sortedAndFilteredItems = computed(() => {
   let result = props.items.filter(item => {
     return item.name.toLowerCase().includes(searchQuery.value.toLowerCase().trim()) ||
@@ -35,6 +74,11 @@ const sortedAndFilteredItems = computed(() => {
     if (sortBy.value === 'nama-asc') return a.name.localeCompare(b.name)
     if (sortBy.value === 'qty-asc') return a.qty - b.qty
     if (sortBy.value === 'qty-desc') return b.qty - a.qty
+    if (sortBy.value === 'luput-terdekat') {
+      if (!a.expiryDate) return 1
+      if (!b.expiryDate) return -1
+      return new Date(a.expiryDate) - new Date(b.expiryDate)
+    }
     return b.id - a.id
   })
 })
@@ -73,9 +117,9 @@ const exportJSON = () => {
 const exportCSV = () => {
   if (props.items.length === 0) return
   const { fileSlug, readable } = getFormattedDateTime()
-  const headers = ['ID,Barcode,Nama,Kategori,Kuantiti,Masa Eksport']
+  const headers = ['ID,Barcode,Nama,Kategori,Kuantiti,Tarikh Luput,Masa Eksport']
   const rows = props.items.map(item => 
-    `"${item.id}","${item.barcode}","${item.name}","${item.category}",${item.qty},"${readable}"`
+    `"${item.id}","${item.barcode}","${item.name}","${item.category}",${item.qty},"${item.expiryDate || '-' }","${readable}"`
   )
   downloadFile('\uFEFF' + [headers, ...rows].join('\n'), `inventory_${fileSlug}.csv`, 'text/csv;charset=utf-8;')
 }
@@ -106,7 +150,7 @@ const exportCSV = () => {
       </div>
     </div>
 
-    <!-- Carian & Sorting Row -->
+    <!-- Carian & Susunan -->
     <div class="flex items-center gap-2 mb-3 shrink-0">
       <div class="relative flex-grow">
         <input 
@@ -130,6 +174,7 @@ const exportCSV = () => {
           class="px-2.5 py-1.5 text-xs bg-zinc-50 border border-zinc-200 rounded-lg focus:bg-white focus:outline-none focus:border-zinc-400 text-zinc-700 font-mono transition-colors cursor-pointer"
         >
           <option value="terkini">Terkini</option>
+          <option value="luput-terdekat">Luput Terdekat</option>
           <option value="nama-asc">Nama (A-Z)</option>
           <option value="qty-asc">Kuantiti (Rendah)</option>
           <option value="qty-desc">Kuantiti (Tinggi)</option>
@@ -137,7 +182,7 @@ const exportCSV = () => {
       </div>
     </div>
     
-    <!-- Filter Tabs & Tindakan Tambahan -->
+    <!-- Filter Tabs -->
     <div class="flex items-center overflow-x-auto pb-2 mb-2 hide-scrollbar gap-1.5 shrink-0">
       <button 
         @click="$emit('change-tab', 'Semua')"
@@ -170,7 +215,6 @@ const exportCSV = () => {
         + Kategori
       </button>
 
-      <!-- Butang Tambah Kod Bar Manual -->
       <button 
         @click="$emit('create-custom-barcode')"
         class="whitespace-nowrap px-2 py-1 rounded-md text-xs bg-zinc-100 hover:bg-zinc-200 text-zinc-800 border border-zinc-200 transition-colors flex items-center gap-1 shrink-0 cursor-pointer font-medium"
@@ -179,7 +223,7 @@ const exportCSV = () => {
       </button>
     </div>
 
-    <!-- Items List -->
+    <!-- Senarai Item -->
     <div v-if="sortedAndFilteredItems.length === 0" class="flex-grow flex items-center justify-center text-zinc-600 text-xs font-mono">
       {{ searchQuery ? 'Tiada padanan carian' : 'Tiada item' }}
     </div>
@@ -193,7 +237,6 @@ const exportCSV = () => {
         <div class="flex flex-col items-start gap-1">
           <div class="flex items-center gap-1.5">
             <span class="font-medium text-zinc-900 text-xs">{{ item.name }}</span>
-            <!-- Butang Cetak Pelekat untuk Barcode Kustom -->
             <button 
               v-if="item.barcode && item.barcode.startsWith('DIF-')"
               @click="$emit('print-label', item)"
@@ -203,13 +246,25 @@ const exportCSV = () => {
               Label
             </button>
           </div>
-          <button 
-            @click="$emit('open-edit-modal', item)" 
-            :class="getCategoryColor(item.category)" 
-            class="text-[10px] tracking-wide px-1.5 py-0.5 rounded transition-opacity cursor-pointer"
-          >
-            {{ item.category }}
-          </button>
+
+          <div class="flex items-center gap-1.5">
+            <button 
+              @click="$emit('open-edit-modal', item)" 
+              :class="getCategoryColor(item.category)" 
+              class="text-[10px] tracking-wide px-1.5 py-0.5 rounded transition-opacity cursor-pointer"
+            >
+              {{ item.category }}
+            </button>
+
+            <!-- Lencana Tarikh Luput -->
+            <span 
+              v-if="item.expiryDate"
+              :class="getExpiryStatus(item.expiryDate)?.badgeClass"
+              class="text-[10px] font-mono px-1.5 py-0.5 rounded border"
+            >
+              ⏳ {{ getExpiryStatus(item.expiryDate)?.text }}
+            </span>
+          </div>
         </div>
         
         <div class="flex items-center gap-1.5 font-mono">

@@ -1,193 +1,300 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, nextTick, onBeforeUnmount } from 'vue'
+import QRCode from 'qrcode'
+import LZString from 'lz-string'
+import { Html5Qrcode } from 'html5-qrcode'
 
-const items = ref(JSON.parse(localStorage.getItem('inv_items') || '[]'))
-const categories = ref(JSON.parse(localStorage.getItem('inv_cats') || '["Kering", "Basah", "Mandian", "Lain-lain"]'))
-const logs = ref(JSON.parse(localStorage.getItem('inv_logs') || '[]'))
+const showQrModal = ref(false)
+const showScannerModal = ref(false)
+const toastMsg = ref('')
+const qrCanvasRef = ref(null)
+const dataSummary = ref({ itemsCount: 0, rawSize: '0 B', compressedSize: '0 B' })
 
-const toastMessage = ref('')
+let qrScanner = null
 
-const showToast = (msg) => {
-  toastMessage.value = msg
-  setTimeout(() => { toastMessage.value = '' }, 2500)
+const triggerToast = (msg) => {
+  toastMsg.value = msg
+  setTimeout(() => { toastMsg.value = '' }, 3000)
 }
 
-const totalQty = computed(() => {
-  return items.value.reduce((acc, item) => acc + (item.qty || 0), 0)
-})
+// 1. JANA QR KOD DATA
+const openGenerateQr = async () => {
+  const items = localStorage.getItem('inv_items') || '[]'
+  const cats = localStorage.getItem('inv_cats') || '[]'
 
-const getFormattedTimestamp = () => {
-  const now = new Date()
-  const d = String(now.getDate()).padStart(2, '0')
-  const m = String(now.getMonth() + 1).padStart(2, '0')
-  const y = now.getFullYear()
-  const hh = String(now.getHours()).padStart(2, '0')
-  const mm = String(now.getMinutes()).padStart(2, '0')
-  return `${d}-${m}-${y}_${hh}-${mm}`
-}
-
-const exportFullBackup = () => {
-  const fullData = {
-    backupDate: new Date().toISOString(),
-    inventory: items.value,
-    categories: categories.value,
-    logs: logs.value
-  }
-  const blob = new Blob([JSON.stringify(fullData, null, 2)], { type: 'application/json' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `backup_${getFormattedTimestamp()}.json`
-  a.click()
-  URL.revokeObjectURL(url)
-  showToast('Sandaran JSON dimuat turun')
-}
-
-const exportLogsCSV = () => {
-  if (logs.value.length === 0) {
-    showToast('Tiada rekod aktiviti')
+  const parsedItems = JSON.parse(items)
+  if (parsedItems.length === 0) {
+    triggerToast('Tiada data untuk dipindahkan.')
     return
   }
-  const headers = ['Jenis,Nama,Masa']
-  const rows = logs.value.map(l => `"${l.type}","${l.name}","${l.timestamp || l.time}"`)
-  const blob = new Blob(['\uFEFF' + [headers, ...rows].join('\n')], { type: 'text/csv;charset=utf-8;' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `logs_${getFormattedTimestamp()}.csv`
-  a.click()
-  URL.revokeObjectURL(url)
-  showToast('Log CSV dimuat turun')
-}
 
-const loadSampleData = () => {
-  if (confirm('Gantikan data semasa dengan data contoh?')) {
-    const sampleItems = [
-      { id: 101, barcode: '9556001234567', name: 'Maggi Kari 5x79g', category: 'Kering', qty: 4 },
-      { id: 102, barcode: '9556007654321', name: 'Spritzer Mineral 1.5L', category: 'Basah', qty: 6 },
-      { id: 103, barcode: '9555123400012', name: 'Beras Basmathi 5kg', category: 'Kering', qty: 2 },
-      { id: 104, barcode: '9558999887711', name: 'Dettol Shower Gel 950ml', category: 'Mandian', qty: 1 }
-    ]
-    const sampleCats = ['Kering', 'Basah', 'Mandian', 'Lain-lain']
-    const sampleLogs = [
-      { id: 1, type: 'DAFTAR', name: 'Maggi Kari 5x79g', timestamp: '[ 10:15 | 02/09/2026 ]' },
-      { id: 2, type: 'TAMBAH', name: 'Spritzer Mineral 1.5L (+1)', timestamp: '[ 11:30 | 02/09/2026 ]' }
-    ]
+  // Bungkus payload dengan penanda INV_SYNC_V1
+  const payload = JSON.stringify({
+    version: 1,
+    items: parsedItems,
+    categories: JSON.parse(cats),
+    timestamp: Date.now()
+  })
 
-    items.value = sampleItems
-    categories.value = sampleCats
-    logs.value = sampleLogs
+  // Mampatkan teks JSON
+  const compressed = LZString.compressToEncodedURIComponent(payload)
+  const fullSyncPayload = `INV_SYNC:${compressed}`
 
-    localStorage.setItem('inv_items', JSON.stringify(sampleItems))
-    localStorage.setItem('inv_cats', JSON.stringify(sampleCats))
-    localStorage.setItem('inv_logs', JSON.stringify(sampleLogs))
+  dataSummary.value = {
+    itemsCount: parsedItems.length,
+    rawSize: `${(new Blob([payload]).size / 1024).toFixed(2)} KB`,
+    compressedSize: `${(new Blob([fullSyncPayload]).size / 1024).toFixed(2)} KB`
+  }
 
-    showToast('Data contoh dimuatkan')
+  showQrModal.value = true
+  await nextTick()
+
+  if (qrCanvasRef.value) {
+    QRCode.toCanvas(qrCanvasRef.value, fullSyncPayload, {
+      width: 280,
+      margin: 1,
+      errorCorrectionLevel: 'M',
+      color: {
+        dark: '#18181b',
+        light: '#ffffff'
+      }
+    }, (error) => {
+      if (error) {
+        console.error('Ralat jana QR:', error)
+        triggerToast('Data terlalu besar untuk satu kod QR.')
+      }
+    })
   }
 }
 
-const resetAllData = () => {
-  if (confirm('Padam semua data dan pulihkan tetapan asal?')) {
+// 2. IMBAS QR & SIMPAN KE LOCALSTORAGE PERANTI INI
+const startImportScanner = async () => {
+  showScannerModal.value = true
+  await nextTick()
+
+  qrScanner = new Html5Qrcode('qr-sync-reader')
+  const config = { fps: 15, qrbox: { width: 250, height: 250 } }
+
+  try {
+    await qrScanner.start(
+      { facingMode: 'environment' },
+      config,
+      (decodedText) => {
+        handleReceivedPayload(decodedText)
+      },
+      () => {}
+    )
+  } catch (err) {
+    console.error('Kamera gagal dimulakan:', err)
+    triggerToast('Gagal akses kamera.')
+    closeImportScanner()
+  }
+}
+
+const closeImportScanner = async () => {
+  if (qrScanner) {
+    try {
+      await qrScanner.stop()
+      qrScanner.clear()
+    } catch (e) {
+      console.error(e)
+    } finally {
+      qrScanner = null
+    }
+  }
+  showScannerModal.value = false
+}
+
+const handleReceivedPayload = async (rawCode) => {
+  if (!rawCode.startsWith('INV_SYNC:')) {
+    triggerToast('Kod QR bukan kod pindahan inventori.')
+    return
+  }
+
+  try {
+    const compressedStr = rawCode.replace('INV_SYNC:', '')
+    const decompressedStr = LZString.decompressFromEncodedURIComponent(compressedStr)
+    const data = JSON.parse(decompressedStr)
+
+    if (data && data.items) {
+      localStorage.setItem('inv_items', JSON.stringify(data.items))
+      if (data.categories) {
+        localStorage.setItem('inv_cats', JSON.stringify(data.categories))
+      }
+
+      await closeImportScanner()
+      triggerToast(`Berjaya! ${data.items.length} item diterima ke peranti ini.`)
+      setTimeout(() => {
+        window.location.reload()
+      }, 1200)
+    }
+  } catch (err) {
+    console.error('Gagal ekstrak data:', err)
+    triggerToast('Format QR rosak atau gagal dinyah-mampat.')
+  }
+}
+
+// Tindakan Selenggara Asal
+const loadSampleData = () => {
+  const sampleCats = ["Kering", "Basah", "Mandian", "Lain-lain"]
+  const sampleItems = [
+    { id: 1, barcode: "955600123456", name: "Maggi Kari 5x79g", category: "Kering", qty: 3, expiryDate: "2026-10-15" },
+    { id: 2, barcode: "DIF-849201", name: "Bawang Goreng Ranggup", category: "Kering", qty: 2, expiryDate: "2026-09-05" },
+    { id: 3, barcode: "955610293847", name: "Sabun Mandi Lavender", category: "Mandian", qty: 4, expiryDate: null }
+  ]
+  localStorage.setItem('inv_cats', JSON.stringify(sampleCats))
+  localStorage.setItem('inv_items', JSON.stringify(sampleItems))
+  triggerToast('Data contoh telah dimuatkan.')
+}
+
+const clearAllData = () => {
+  if (confirm('Adakah anda pasti mahu memadam semua data inventori dan log?')) {
     localStorage.removeItem('inv_items')
     localStorage.removeItem('inv_cats')
     localStorage.removeItem('inv_logs')
-
-    items.value = []
-    categories.value = ['Kering', 'Basah', 'Mandian', 'Lain-lain']
-    logs.value = []
-
-    localStorage.setItem('inv_cats', JSON.stringify(categories.value))
-    showToast('Semua data dikosongkan')
+    triggerToast('Semua data dipadam.')
+    setTimeout(() => { window.location.reload() }, 800)
   }
 }
+
+onBeforeUnmount(() => {
+  closeImportScanner()
+})
 </script>
 
 <template>
-  <main class="min-h-screen bg-[#fafafa] text-zinc-800 py-12 px-6 font-sans antialiased">
-    <!-- Toast -->
-    <div v-if="toastMessage" class="fixed top-4 left-1/2 -translate-x-1/2 bg-zinc-900 text-white text-xs font-mono px-4 py-2 rounded-lg shadow-lg z-[100]">
-      {{ toastMessage }}
+  <main class="min-h-screen bg-[#fafafa] p-4 sm:p-6 md:p-8 font-sans antialiased text-zinc-900">
+    <div v-if="toastMsg" class="fixed top-4 left-1/2 -translate-x-1/2 bg-zinc-900 text-white text-xs font-mono px-4 py-2 rounded-lg shadow-lg z-[100]">
+      {{ toastMsg }}
     </div>
 
-    <div class="max-w-2xl mx-auto space-y-10">
-      
-      <!-- Header -->
-      <header class="border-b border-zinc-200 pb-6 space-y-2">
-        <p class="text-xs font-mono uppercase tracking-widest text-zinc-600">Sistem</p>
-        <h1 class="text-2xl font-semibold tracking-tight text-zinc-900">Tetapan & Pengurusan Data</h1>
-        <p class="text-xs text-zinc-600">Konfigurasi storan lokal peranti dan sandaran fail.</p>
-      </header>
+    <div class="max-w-2xl mx-auto space-y-6">
+      <div>
+        <h1 class="text-base font-semibold tracking-tight text-zinc-900">Tetapan & Penyelenggaraan</h1>
+        <p class="text-xs text-zinc-500">Urus data storan peranti dan pemindahan luar talian.</p>
+      </div>
 
-      <!-- Metrik Ringkas -->
-      <section class="grid grid-cols-4 gap-3 border border-zinc-200 rounded-xl bg-white p-4 text-center font-mono">
-        <div>
-          <p class="text-[10px] text-zinc-600 uppercase">Barang</p>
-          <p class="text-base font-semibold text-zinc-900 mt-0.5">{{ items.length }}</p>
+      <!-- Kad Pemindahan Data P2P via QR -->
+      <section class="bg-white border border-zinc-200 rounded-2xl p-5 shadow-sm space-y-4">
+        <div class="border-b border-zinc-100 pb-3">
+          <h2 class="text-xs font-bold font-mono tracking-wider uppercase text-zinc-800">Pemindahan Data Antara Peranti (P2P QR)</h2>
+          <p class="text-xs text-zinc-500 mt-0.5">Pindahkan keseluruhan inventori ke telefon atau peranti lain tanpa perlukan internet atau database server.</p>
         </div>
-        <div>
-          <p class="text-[10px] text-zinc-600 uppercase">Unit</p>
-          <p class="text-base font-semibold text-zinc-900 mt-0.5">{{ totalQty }}</p>
-        </div>
-        <div>
-          <p class="text-[10px] text-zinc-600 uppercase">Kategori</p>
-          <p class="text-base font-semibold text-zinc-900 mt-0.5">{{ categories.length }}</p>
-        </div>
-        <div>
-          <p class="text-[10px] text-zinc-600 uppercase">Log</p>
-          <p class="text-base font-semibold text-zinc-900 mt-0.5">{{ logs.length }}</p>
-        </div>
-      </section>
 
-      <!-- Seksyen Sandaran -->
-      <section class="space-y-4">
-        <h2 class="text-xs font-mono uppercase tracking-wider text-zinc-600">Sandaran & Eksport</h2>
-        <div class="border border-zinc-200 rounded-xl bg-white divide-y divide-zinc-100 text-xs">
-          <div class="p-4 flex items-center justify-between">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+          <!-- Butang Papar QR (Peranti Penghantar) -->
+          <div class="p-3.5 rounded-xl border border-zinc-200 bg-zinc-50/50 flex flex-col justify-between space-y-3">
             <div>
-              <p class="font-medium text-zinc-900">Fail Sandaran Penuh (.JSON)</p>
-              <p class="text-zinc-600 mt-0.5">Gabungan senarai stok, kategori, dan log transaksi.</p>
+              <p class="text-xs font-semibold text-zinc-800">1. Hantar Data (Laptop / Sumber)</p>
+              <p class="text-[11px] text-zinc-500 mt-1">Papar QR kod termampat di skrin ini untuk diimbas oleh telefon.</p>
             </div>
-            <button @click="exportFullBackup" class="px-3 py-1.5 border border-zinc-300 hover:border-zinc-400 rounded-md font-medium transition-colors cursor-pointer">
-              Eksport JSON
+            <button 
+              @click="openGenerateQr"
+              class="w-full py-2 px-3 bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-medium rounded-lg transition-colors cursor-pointer"
+            >
+              Jana QR Pemindahan
             </button>
           </div>
-          <div class="p-4 flex items-center justify-between">
+
+          <!-- Butang Imbas QR (Peranti Penerima) -->
+          <div class="p-3.5 rounded-xl border border-zinc-200 bg-zinc-50/50 flex flex-col justify-between space-y-3">
             <div>
-              <p class="font-medium text-zinc-900">Arkib Log Aktiviti (.CSV)</p>
-              <p class="text-zinc-600 mt-0.5">Jadual audit bagi setiap aktiviti keluar masuk.</p>
+              <p class="text-xs font-semibold text-zinc-800">2. Terima Data (Telefon / Sasaran)</p>
+              <p class="text-[11px] text-zinc-500 mt-1">Buka kamera peranti ini untuk imbas QR di skrin laptop.</p>
             </div>
-            <button @click="exportLogsCSV" class="px-3 py-1.5 border border-zinc-300 hover:border-zinc-400 rounded-md font-medium transition-colors cursor-pointer">
-              Eksport CSV
+            <button 
+              @click="startImportScanner"
+              class="w-full py-2 px-3 bg-zinc-100 hover:bg-zinc-200 text-zinc-900 border border-zinc-200 text-xs font-medium rounded-lg transition-colors cursor-pointer"
+            >
+              Imbas QR Pindahan
             </button>
           </div>
         </div>
       </section>
 
-      <!-- Seksyen Penyelenggaraan -->
-      <section class="space-y-4">
-        <h2 class="text-xs font-mono uppercase tracking-wider text-zinc-600">Penyelenggaraan Storan</h2>
-        <div class="border border-zinc-200 rounded-xl bg-white divide-y divide-zinc-100 text-xs">
-          <div class="p-4 flex items-center justify-between">
-            <div>
-              <p class="font-medium text-zinc-900">Muat Data Contoh</p>
-              <p class="text-zinc-600 mt-0.5">Isi storan dengan set barangan simulasi.</p>
-            </div>
-            <button @click="loadSampleData" class="px-3 py-1.5 border border-zinc-300 hover:bg-zinc-50 rounded-md font-medium transition-colors cursor-pointer">
-              Muat Data
-            </button>
+      <!-- Kad Pengurusan Data Asal -->
+      <section class="bg-white border border-zinc-200 rounded-2xl p-5 shadow-sm space-y-3">
+        <div class="border-b border-zinc-100 pb-3">
+          <h2 class="text-xs font-bold font-mono tracking-wider uppercase text-zinc-800">Penyelenggaraan Storan</h2>
+        </div>
+
+        <div class="flex items-center justify-between py-2 border-b border-zinc-100">
+          <div>
+            <p class="text-xs font-semibold text-zinc-900">Muat Data Contoh</p>
+            <p class="text-[11px] text-zinc-500">Isi storan dengan rekod simulasi bagi tujuan pengujian.</p>
           </div>
-          <div class="p-4 flex items-center justify-between">
-            <div>
-              <p class="font-medium text-zinc-900">Kosongkan Semua Rekod</p>
-              <p class="text-zinc-600 mt-0.5">Padam data localStorage dan kembalikan ke tetapan asal.</p>
-            </div>
-            <button @click="resetAllData" class="px-3 py-1.5 border border-zinc-300 hover:bg-zinc-100 text-zinc-700 rounded-md font-medium transition-colors cursor-pointer">
-              Padam Data
-            </button>
+          <button 
+            @click="loadSampleData"
+            class="px-3 py-1.5 border border-zinc-200 hover:bg-zinc-100 text-zinc-800 rounded-lg text-xs font-mono transition-colors cursor-pointer"
+          >
+            Muat Data
+          </button>
+        </div>
+
+        <div class="flex items-center justify-between py-2">
+          <div>
+            <p class="text-xs font-semibold text-rose-600">Kosongkan Semua Rekod</p>
+            <p class="text-[11px] text-zinc-500">Padamkan data LocalStorage dan kembalikan kepada kosong.</p>
           </div>
+          <button 
+            @click="clearAllData"
+            class="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-mono transition-colors cursor-pointer"
+          >
+            Padam Data
+          </button>
         </div>
       </section>
+    </div>
 
+    <!-- Modal Paparan QR Kod (Penghantar) -->
+    <div v-if="showQrModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+      <div class="bg-white rounded-2xl border border-zinc-200 shadow-xl max-w-sm w-full p-6 text-center space-y-4">
+        <div>
+          <h3 class="text-sm font-semibold text-zinc-900">Imbas Menggunakan Telefon</h3>
+          <p class="text-xs text-zinc-500 mt-0.5">Buka halaman Tetapan pada telefon dan tekan "Imbas QR Pindahan".</p>
+        </div>
+
+        <div class="flex justify-center bg-white p-3 rounded-xl border border-zinc-200">
+          <canvas ref="qrCanvasRef" class="max-w-full"></canvas>
+        </div>
+
+        <div class="bg-zinc-50 p-2.5 rounded-lg border border-zinc-200 text-left font-mono text-[10px] text-zinc-500 space-y-0.5">
+          <div class="flex justify-between"><span>Jumlah Item:</span> <span class="text-zinc-900 font-semibold">{{ dataSummary.itemsCount }}</span></div>
+          <div class="flex justify-between"><span>Saiz Mentah:</span> <span>{{ dataSummary.rawSize }}</span></div>
+          <div class="flex justify-between"><span>Saiz Termampat:</span> <span class="text-emerald-600 font-semibold">{{ dataSummary.compressedSize }}</span></div>
+        </div>
+
+        <button 
+          @click="showQrModal = false"
+          class="w-full py-2 bg-zinc-900 hover:bg-zinc-800 text-white rounded-xl text-xs font-medium cursor-pointer"
+        >
+          Selesai / Tutup
+        </button>
+      </div>
+    </div>
+
+    <!-- Modal Pengimbas QR (Penerima) -->
+    <div v-if="showScannerModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
+      <div class="bg-white rounded-2xl border border-zinc-200 shadow-xl max-w-sm w-full p-5 space-y-4">
+        <div class="flex justify-between items-center">
+          <div>
+            <h3 class="text-sm font-semibold text-zinc-900">Imbas QR Komputer</h3>
+            <p class="text-[11px] text-zinc-500">Halakan kamera ke QR di skrin komputer.</p>
+          </div>
+          <button @click="closeImportScanner" class="text-zinc-400 hover:text-zinc-600 font-mono text-sm cursor-pointer">✕</button>
+        </div>
+
+        <div class="relative bg-black rounded-xl overflow-hidden min-h-[260px] flex items-center justify-center">
+          <div id="qr-sync-reader" class="w-full"></div>
+        </div>
+
+        <button 
+          @click="closeImportScanner"
+          class="w-full py-2 bg-zinc-100 hover:bg-zinc-200 text-zinc-800 rounded-xl text-xs font-medium cursor-pointer"
+        >
+          Batal
+        </button>
+      </div>
     </div>
   </main>
 </template>

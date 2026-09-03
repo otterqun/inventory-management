@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { Html5Qrcode } from 'html5-qrcode'
 import PieChart from '../components/PieChart.vue'
 import ScannerBox from '../components/ScannerBox.vue'
@@ -9,7 +9,7 @@ import ActivityLog from '../components/ActivityLog.vue'
 import BarcodeLabelModal from '../components/BarcodeLabelModal.vue'
 
 const inventory = ref(JSON.parse(localStorage.getItem('inv_items') || '[]'))
-const categories = ref(JSON.parse(localStorage.getItem('inv_cats') || '["Kering", "Basah", "Mandian", "Lain-lain"]'))
+const categories = ref(JSON.parse(localStorage.getItem('inv_cats') || '["Kering", "Basah", "Lain-lain"]'))
 const activityLogs = ref(JSON.parse(localStorage.getItem('inv_logs') || '[]'))
 
 watch(inventory, (val) => localStorage.setItem('inv_items', JSON.stringify(val)), { deep: true })
@@ -17,6 +17,7 @@ watch(categories, (val) => localStorage.setItem('inv_cats', JSON.stringify(val))
 watch(activityLogs, (val) => localStorage.setItem('inv_logs', JSON.stringify(val)), { deep: true })
 
 const isScanning = ref(false)
+const scanMode = ref('in') 
 let html5QrCode = null
 let isProcessing = false 
 
@@ -27,6 +28,7 @@ const showItemModal = ref(false)
 const pendingBarcode = ref('')
 const newItemName = ref('')
 const newItemCategory = ref('Kering') 
+const newItemExpiry = ref('') // State tarikh luput pendaftaran
 
 const showCategoryModal = ref(false)
 const newCategoryName = ref('')
@@ -34,12 +36,25 @@ const newCategoryName = ref('')
 const showEditModal = ref(false)
 const editingItem = ref(null)
 const editCategorySelection = ref('')
+const editExpirySelection = ref('') // State tarikh luput suntingan
 
-// State untuk Modal Pelekat Kod Bar
 const showLabelModal = ref(false)
 const selectedLabelItem = ref(null)
 
-const playBeepSound = () => {
+onBeforeUnmount(async () => {
+  if (isScanning.value && html5QrCode) {
+    try {
+      await html5QrCode.stop()
+      html5QrCode.clear()
+    } catch (err) {
+      console.error('Kamera gagal ditutup:', err)
+    } finally {
+      isScanning.value = false
+    }
+  }
+})
+
+const playBeepSound = (mode = 'in') => {
   try {
     const AudioContext = window.AudioContext || window.webkitAudioContext
     if (!AudioContext) return
@@ -52,7 +67,8 @@ const playBeepSound = () => {
     gainNode.connect(audioCtx.destination)
 
     oscillator.type = 'triangle'
-    oscillator.frequency.setValueAtTime(950, audioCtx.currentTime)
+    const frequency = mode === 'in' ? 950 : 450
+    oscillator.frequency.setValueAtTime(frequency, audioCtx.currentTime)
 
     gainNode.gain.setValueAtTime(0.8, audioCtx.currentTime)
     gainNode.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.15)
@@ -61,10 +77,10 @@ const playBeepSound = () => {
     oscillator.stop(audioCtx.currentTime + 0.15)
 
     if (navigator.vibrate) {
-      navigator.vibrate(100)
+      navigator.vibrate(mode === 'in' ? 100 : [60, 40, 60])
     }
   } catch (err) {
-    console.error('Audio beep tidak dapat dimainkan:', err)
+    console.error('Audio beep ralat:', err)
   }
 }
 
@@ -122,13 +138,15 @@ const deleteCategory = (cat) => {
 const openEditModal = (item) => {
   editingItem.value = item
   editCategorySelection.value = item.category
+  editExpirySelection.value = item.expiryDate || ''
   showEditModal.value = true
 }
 
 const saveEditCategory = () => {
   if (editingItem.value) {
     editingItem.value.category = editCategorySelection.value
-    showToast(`Kategori ${editingItem.value.name} dikemaskini`)
+    editingItem.value.expiryDate = editExpirySelection.value || null
+    showToast(`${editingItem.value.name} dikemaskini`)
     showEditModal.value = false
     editingItem.value = null
   }
@@ -143,32 +161,51 @@ const handleScan = (scannedBarcode) => {
   if (isProcessing) return
   isProcessing = true
 
-  playBeepSound()
-
   const existingItem = inventory.value.find(item => item.barcode === scannedBarcode)
 
   if (existingItem) {
-    existingItem.qty++
-    addLog('TAMBAH', `${existingItem.name} (+1)`)
-    showToast(`${existingItem.name} (+1)`)
+    if (scanMode.value === 'in') {
+      playBeepSound('in')
+      existingItem.qty++
+      addLog('TAMBAH', `${existingItem.name} (+1)`)
+      showToast(`+1 ${existingItem.name}`)
+    } else {
+      playBeepSound('out')
+      if (existingItem.qty > 1) {
+        existingItem.qty--
+        addLog('TOLAK', `${existingItem.name} (-1)`)
+        showToast(`-1 ${existingItem.name}`)
+      } else {
+        inventory.value = inventory.value.filter(i => i.id !== existingItem.id)
+        addLog('BUANG', `${existingItem.name}`)
+        showToast(`${existingItem.name} kehabisan stok`)
+      }
+    }
     setTimeout(() => { isProcessing = false }, 2000)
   } else {
-    pendingBarcode.value = scannedBarcode
-    newItemCategory.value = categories.value.length > 0 ? categories.value[0] : '' 
-    showItemModal.value = true
+    if (scanMode.value === 'in') {
+      playBeepSound('in')
+      pendingBarcode.value = scannedBarcode
+      newItemCategory.value = categories.value.length > 0 ? categories.value[0] : '' 
+      newItemExpiry.value = ''
+      showItemModal.value = true
+    } else {
+      playBeepSound('out')
+      showToast('Item tiada dalam inventori')
+      setTimeout(() => { isProcessing = false }, 2000)
+    }
   }
 }
 
-// Jana Barcode Manual Format DIF-XXXXXX
 const handleCreateCustomBarcode = () => {
   const randomSuffix = Math.floor(100000 + Math.random() * 900000)
   pendingBarcode.value = `DIF-${randomSuffix}`
   newItemCategory.value = categories.value.length > 0 ? categories.value[0] : ''
   newItemName.value = ''
+  newItemExpiry.value = ''
   showItemModal.value = true
 }
 
-// Buka Modal Cetak Pelekat
 const openLabelModal = (item) => {
   selectedLabelItem.value = item
   showLabelModal.value = true
@@ -181,13 +218,13 @@ const saveNewItem = () => {
       barcode: pendingBarcode.value,
       name: newItemName.value,
       category: newItemCategory.value,
+      expiryDate: newItemExpiry.value || null,
       qty: 1
     }
     inventory.value.push(newItem)
     addLog('DAFTAR', `${newItemName.value}`)
     showToast(`Item didaftarkan`)
     
-    // Jika item kustom DIF, terus tawarkan modal cetak pelekat
     if (newItem.barcode.startsWith('DIF-')) {
       openLabelModal(newItem)
     }
@@ -200,6 +237,7 @@ const closeItemModal = () => {
   showItemModal.value = false
   newItemName.value = ''
   pendingBarcode.value = ''
+  newItemExpiry.value = ''
   setTimeout(() => { isProcessing = false }, 1000)
 }
 
@@ -264,17 +302,19 @@ const clearLogs = () => {
       {{ toastMessage }}
     </div>
 
-    <!-- Modals Pendaftaran Sedia Ada -->
+    <!-- Modals -->
     <InventoryModals 
       :show-category-modal="showCategoryModal"
       v-model:new-category-name="newCategoryName"
       :show-edit-modal="showEditModal"
       :editing-item="editingItem"
       v-model:edit-category-selection="editCategorySelection"
+      v-model:edit-expiry-selection="editExpirySelection"
       :show-item-modal="showItemModal"
       :pending-barcode="pendingBarcode"
       v-model:new-item-name="newItemName"
       v-model:new-item-category="newItemCategory"
+      v-model:newItemExpiry="newItemExpiry"
       :categories="categories"
       @close-category-modal="showCategoryModal = false"
       @save-category="saveNewCategory"
@@ -285,18 +325,19 @@ const clearLogs = () => {
       @open-category-modal="openCategoryModal"
     />
 
-    <!-- Modal Cetak Pelekat Baru -->
+    <!-- Modal Cetak Pelekat -->
     <BarcodeLabelModal 
       :show="showLabelModal"
       :item="selectedLabelItem"
       @close="showLabelModal = false"
     />
 
-    <!-- Layout Dashboard -->
+    <!-- Dashboard -->
     <div class="max-w-6xl mx-auto space-y-6">
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
         <ScannerBox 
           :is-scanning="isScanning" 
+          v-model:scan-mode="scanMode"
           @toggle-scan="toggleScan" 
         />
         <InventoryList 
