@@ -113,7 +113,7 @@ const resetAllData = () => {
       
       <!-- Header -->
       <header class="border-b border-zinc-200 pb-6 space-y-2">
-        <p class="text-xs font-mono uppercase tracking-widest text-zinc-600">Sistem / 02</p>
+        <p class="text-xs font-mono uppercase tracking-widest text-zinc-600">Sistem</p>
         <h1 class="text-2xl font-semibold tracking-tight text-zinc-900">Tetapan & Pengurusan Data</h1>
         <p class="text-xs text-zinc-600">Konfigurasi storan lokal peranti dan sandaran fail.</p>
       </header>

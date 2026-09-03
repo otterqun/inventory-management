@@ -13,20 +13,29 @@ defineEmits([
   'delete-cat', 
   'open-edit-modal', 
   'add-qty', 
-  'reduce-qty'
+  'reduce-qty',
+  'create-custom-barcode',
+  'print-label'
 ])
 
 const searchQuery = ref('')
+const sortBy = ref('terkini')
 
-// Tona neutral halus untuk badge kategori
-const getCategoryColor = (cat) => {
+const getCategoryColor = () => {
   return 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200 border border-zinc-200/60'
 }
 
-const filteredItems = computed(() => {
-  return props.items.filter(item => {
+const sortedAndFilteredItems = computed(() => {
+  let result = props.items.filter(item => {
     return item.name.toLowerCase().includes(searchQuery.value.toLowerCase().trim()) ||
            item.barcode.includes(searchQuery.value.trim())
+  })
+
+  return result.slice().sort((a, b) => {
+    if (sortBy.value === 'nama-asc') return a.name.localeCompare(b.name)
+    if (sortBy.value === 'qty-asc') return a.qty - b.qty
+    if (sortBy.value === 'qty-desc') return b.qty - a.qty
+    return b.id - a.id
   })
 })
 
@@ -78,7 +87,7 @@ const exportCSV = () => {
     <div class="flex justify-between items-center mb-3">
       <div class="flex items-center gap-2">
         <h2 class="text-sm font-semibold tracking-tight text-zinc-900">Senarai Stok</h2>
-        <span class="text-xs text-zinc-600 font-mono">({{ filteredItems.length }})</span>
+        <span class="text-xs text-zinc-600 font-mono">({{ sortedAndFilteredItems.length }})</span>
       </div>
       
       <div class="flex items-center gap-1.5 text-xs font-mono">
@@ -97,24 +106,38 @@ const exportCSV = () => {
       </div>
     </div>
 
-    <!-- Search Input -->
-    <div class="relative mb-3 shrink-0">
-      <input 
-        v-model="searchQuery"
-        type="text" 
-        placeholder="Cari item atau kod bar..." 
-        class="w-full px-3 py-1.5 text-xs bg-zinc-50 border border-zinc-200 rounded-lg focus:bg-white focus:outline-none focus:border-zinc-400 text-zinc-800 placeholder-zinc-400 font-sans transition-colors"
-      />
-      <button 
-        v-if="searchQuery" 
-        @click="searchQuery = ''" 
-        class="absolute inset-y-0 right-0 pr-2.5 flex items-center text-zinc-400 hover:text-zinc-600 text-xs cursor-pointer"
-      >
-        ✕
-      </button>
+    <!-- Carian & Sorting Row -->
+    <div class="flex items-center gap-2 mb-3 shrink-0">
+      <div class="relative flex-grow">
+        <input 
+          v-model="searchQuery"
+          type="text" 
+          placeholder="Cari item atau kod bar..." 
+          class="w-full px-3 py-1.5 text-xs bg-zinc-50 border border-zinc-200 rounded-lg focus:bg-white focus:outline-none focus:border-zinc-400 text-zinc-800 placeholder-zinc-400 font-sans transition-colors"
+        />
+        <button 
+          v-if="searchQuery" 
+          @click="searchQuery = ''" 
+          class="absolute inset-y-0 right-0 pr-2.5 flex items-center text-zinc-400 hover:text-zinc-600 text-xs cursor-pointer"
+        >
+          ✕
+        </button>
+      </div>
+
+      <div class="shrink-0">
+        <select 
+          v-model="sortBy"
+          class="px-2.5 py-1.5 text-xs bg-zinc-50 border border-zinc-200 rounded-lg focus:bg-white focus:outline-none focus:border-zinc-400 text-zinc-700 font-mono transition-colors cursor-pointer"
+        >
+          <option value="terkini">Terkini</option>
+          <option value="nama-asc">Nama (A-Z)</option>
+          <option value="qty-asc">Kuantiti (Rendah)</option>
+          <option value="qty-desc">Kuantiti (Tinggi)</option>
+        </select>
+      </div>
     </div>
     
-    <!-- Filter Tabs -->
+    <!-- Filter Tabs & Tindakan Tambahan -->
     <div class="flex items-center overflow-x-auto pb-2 mb-2 hide-scrollbar gap-1.5 shrink-0">
       <button 
         @click="$emit('change-tab', 'Semua')"
@@ -146,21 +169,40 @@ const exportCSV = () => {
       >
         + Kategori
       </button>
+
+      <!-- Butang Tambah Kod Bar Manual -->
+      <button 
+        @click="$emit('create-custom-barcode')"
+        class="whitespace-nowrap px-2 py-1 rounded-md text-xs bg-zinc-100 hover:bg-zinc-200 text-zinc-800 border border-zinc-200 transition-colors flex items-center gap-1 shrink-0 cursor-pointer font-medium"
+      >
+        + Kod Manual
+      </button>
     </div>
 
     <!-- Items List -->
-    <div v-if="filteredItems.length === 0" class="flex-grow flex items-center justify-center text-zinc-600 text-xs font-mono">
+    <div v-if="sortedAndFilteredItems.length === 0" class="flex-grow flex items-center justify-center text-zinc-600 text-xs font-mono">
       {{ searchQuery ? 'Tiada padanan carian' : 'Tiada item' }}
     </div>
 
     <div v-else class="space-y-1.5 overflow-y-auto pr-1 flex-grow">
       <div 
-        v-for="item in filteredItems" 
+        v-for="item in sortedAndFilteredItems" 
         :key="item.id" 
         class="flex justify-between items-center p-2.5 rounded-xl border border-zinc-100 hover:border-zinc-200 bg-white transition-colors"
       >
         <div class="flex flex-col items-start gap-1">
-          <span class="font-medium text-zinc-900 text-xs">{{ item.name }}</span>
+          <div class="flex items-center gap-1.5">
+            <span class="font-medium text-zinc-900 text-xs">{{ item.name }}</span>
+            <!-- Butang Cetak Pelekat untuk Barcode Kustom -->
+            <button 
+              v-if="item.barcode && item.barcode.startsWith('DIF-')"
+              @click="$emit('print-label', item)"
+              title="Cetak pelekat kod bar"
+              class="text-[10px] font-mono px-1 py-0.2 bg-zinc-100 hover:bg-zinc-200 text-zinc-600 rounded border border-zinc-200 cursor-pointer"
+            >
+              Label
+            </button>
+          </div>
           <button 
             @click="$emit('open-edit-modal', item)" 
             :class="getCategoryColor(item.category)" 

@@ -1,11 +1,12 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
-import { Html5Qrcode} from 'html5-qrcode'
+import { Html5Qrcode } from 'html5-qrcode'
 import PieChart from '../components/PieChart.vue'
 import ScannerBox from '../components/ScannerBox.vue'
 import InventoryList from '../components/InventoryList.vue'
 import InventoryModals from '../components/InventoryModals.vue'
 import ActivityLog from '../components/ActivityLog.vue'
+import BarcodeLabelModal from '../components/BarcodeLabelModal.vue'
 
 const inventory = ref(JSON.parse(localStorage.getItem('inv_items') || '[]'))
 const categories = ref(JSON.parse(localStorage.getItem('inv_cats') || '["Kering", "Basah", "Mandian", "Lain-lain"]'))
@@ -33,6 +34,39 @@ const newCategoryName = ref('')
 const showEditModal = ref(false)
 const editingItem = ref(null)
 const editCategorySelection = ref('')
+
+// State untuk Modal Pelekat Kod Bar
+const showLabelModal = ref(false)
+const selectedLabelItem = ref(null)
+
+const playBeepSound = () => {
+  try {
+    const AudioContext = window.AudioContext || window.webkitAudioContext
+    if (!AudioContext) return
+
+    const audioCtx = new AudioContext()
+    const oscillator = audioCtx.createOscillator()
+    const gainNode = audioCtx.createGain()
+
+    oscillator.connect(gainNode)
+    gainNode.connect(audioCtx.destination)
+
+    oscillator.type = 'triangle'
+    oscillator.frequency.setValueAtTime(950, audioCtx.currentTime)
+
+    gainNode.gain.setValueAtTime(0.8, audioCtx.currentTime)
+    gainNode.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.15)
+
+    oscillator.start(audioCtx.currentTime)
+    oscillator.stop(audioCtx.currentTime + 0.15)
+
+    if (navigator.vibrate) {
+      navigator.vibrate(100)
+    }
+  } catch (err) {
+    console.error('Audio beep tidak dapat dimainkan:', err)
+  }
+}
 
 const addLog = (type, name) => {
   const now = new Date()
@@ -109,6 +143,8 @@ const handleScan = (scannedBarcode) => {
   if (isProcessing) return
   isProcessing = true
 
+  playBeepSound()
+
   const existingItem = inventory.value.find(item => item.barcode === scannedBarcode)
 
   if (existingItem) {
@@ -123,17 +159,39 @@ const handleScan = (scannedBarcode) => {
   }
 }
 
+// Jana Barcode Manual Format DIF-XXXXXX
+const handleCreateCustomBarcode = () => {
+  const randomSuffix = Math.floor(100000 + Math.random() * 900000)
+  pendingBarcode.value = `DIF-${randomSuffix}`
+  newItemCategory.value = categories.value.length > 0 ? categories.value[0] : ''
+  newItemName.value = ''
+  showItemModal.value = true
+}
+
+// Buka Modal Cetak Pelekat
+const openLabelModal = (item) => {
+  selectedLabelItem.value = item
+  showLabelModal.value = true
+}
+
 const saveNewItem = () => {
   if (newItemName.value.trim() !== '') {
-    inventory.value.push({
+    const newItem = {
       id: Date.now(),
       barcode: pendingBarcode.value,
       name: newItemName.value,
       category: newItemCategory.value,
       qty: 1
-    })
+    }
+    inventory.value.push(newItem)
     addLog('DAFTAR', `${newItemName.value}`)
     showToast(`Item didaftarkan`)
+    
+    // Jika item kustom DIF, terus tawarkan modal cetak pelekat
+    if (newItem.barcode.startsWith('DIF-')) {
+      openLabelModal(newItem)
+    }
+
     closeItemModal()
   }
 }
@@ -156,7 +214,6 @@ const toggleScan = async () => {
     isScanning.value = true
     html5QrCode = new Html5Qrcode("reader")
 
-    // Kotak viewfinder melintang (lebar 300px, tinggi 100px)
     const config = {
       fps: 15,
       qrbox: { width: 300, height: 100 }
@@ -203,12 +260,11 @@ const clearLogs = () => {
 <template>
   <main class="min-h-screen bg-[#fafafa] p-4 sm:p-6 md:p-8 font-sans antialiased text-zinc-900 relative">
     
-    <!-- Minimalist Toast -->
     <div v-if="toastMessage" class="fixed top-4 left-1/2 -translate-x-1/2 bg-zinc-900 text-white text-xs font-mono px-4 py-2 rounded-lg shadow-lg z-[100] border border-zinc-800">
       {{ toastMessage }}
     </div>
 
-    <!-- Modals -->
+    <!-- Modals Pendaftaran Sedia Ada -->
     <InventoryModals 
       :show-category-modal="showCategoryModal"
       v-model:new-category-name="newCategoryName"
@@ -229,10 +285,15 @@ const clearLogs = () => {
       @open-category-modal="openCategoryModal"
     />
 
-    <!-- Dashboard Container -->
+    <!-- Modal Cetak Pelekat Baru -->
+    <BarcodeLabelModal 
+      :show="showLabelModal"
+      :item="selectedLabelItem"
+      @close="showLabelModal = false"
+    />
+
+    <!-- Layout Dashboard -->
     <div class="max-w-6xl mx-auto space-y-6">
-      
-      <!-- Baris Atas -->
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
         <ScannerBox 
           :is-scanning="isScanning" 
@@ -248,15 +309,15 @@ const clearLogs = () => {
           @open-edit-modal="openEditModal"
           @add-qty="addQty"
           @reduce-qty="reduceQty"
+          @create-custom-barcode="handleCreateCustomBarcode"
+          @print-label="openLabelModal"
         />
       </div>
 
-      <!-- Baris Bawah -->
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
         <PieChart :items="inventory" :categories="categories" />
         <ActivityLog :logs="activityLogs" @clear-logs="clearLogs" />
       </div>
-
     </div>
   </main>
 </template>

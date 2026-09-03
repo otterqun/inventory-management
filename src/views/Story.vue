@@ -7,7 +7,7 @@
       
       <!-- Tajuk & Metadata Ringkas -->
       <header class="border-b border-zinc-200 pb-8 space-y-3">
-        <p class="text-xs font-mono uppercase tracking-widest text-zinc-600">Dev Note / 01</p>
+        <p class="text-xs font-mono uppercase tracking-widest text-zinc-600">Dev Note</p>
         <h1 class="text-3xl font-semibold tracking-tight text-zinc-900">
           Nota Pembangunan: Kenapa Bina Sistem Ini?
         </h1>
