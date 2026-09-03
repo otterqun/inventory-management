@@ -139,11 +139,11 @@ const handleReceivedPayload = async (rawCode) => {
 
 // Tindakan Selenggara
 const loadSampleData = () => {
-  const sampleCats = ["Kering", "Basah", "Mandian", "Lain-lain"]
+  const sampleCats = ["Kering", "Basah", "Lain-lain"]
   const sampleItems = [
     { id: 1, barcode: "955600123456", name: "Maggi Kari 5x79g", category: "Kering", qty: 3, expiryDate: "2026-10-15" },
     { id: 2, barcode: "DIF-849201", name: "Bawang Goreng Ranggup", category: "Kering", qty: 2, expiryDate: "2026-09-05" },
-    { id: 3, barcode: "955610293847", name: "Sabun Mandi Lavender", category: "Mandian", qty: 4, expiryDate: null }
+    { id: 3, barcode: "955610293847", name: "Ikan Siakap", category: "Basah", qty: 2, expiryDate: null }
   ]
   localStorage.setItem('inv_cats', JSON.stringify(sampleCats))
   localStorage.setItem('inv_items', JSON.stringify(sampleItems))

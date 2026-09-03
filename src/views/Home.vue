@@ -197,13 +197,32 @@ const handleScan = (scannedBarcode) => {
   }
 }
 
+// Jana Barcode Manual Format DIF-XXXXXX yang dijamin tiada pendua
+const generateUniqueBarcode = () => {
+  let uniqueBarcode = ''
+  let isExists = true
+
+  // Terus jana nombor baru selagi nombor tersebut wujud dalam inventori
+  while (isExists) {
+    const randomSuffix = Math.floor(100000 + Math.random() * 900000)
+    uniqueBarcode = `DIF-${randomSuffix}`
+    isExists = inventory.value.some(item => item.barcode === uniqueBarcode)
+  }
+
+  return uniqueBarcode
+}
+
 const handleCreateCustomBarcode = () => {
-  const randomSuffix = Math.floor(100000 + Math.random() * 900000)
-  pendingBarcode.value = `DIF-${randomSuffix}`
+  pendingBarcode.value = generateUniqueBarcode()
   newItemCategory.value = categories.value.length > 0 ? categories.value[0] : ''
   newItemName.value = ''
   newItemExpiry.value = ''
   showItemModal.value = true
+}
+
+// Fungsi untuk butang refresh kod bar dari dalam modal
+const handleRegenerateBarcode = () => {
+  pendingBarcode.value = generateUniqueBarcode()
 }
 
 const openLabelModal = (item) => {
@@ -293,6 +312,14 @@ const clearLogs = () => {
   localStorage.removeItem('inv_logs')
   showToast('Log dikosongkan')
 }
+
+const handleIncrementExistingFromModal = (existingItem) => {
+  existingItem.qty++
+  playBeepSound('in')
+  addLog('TAMBAH', `${existingItem.name} (+1)`)
+  showToast(`+1 ${existingItem.name}`)
+  closeItemModal()
+}
 </script>
 
 <template>
@@ -316,6 +343,9 @@ const clearLogs = () => {
       v-model:new-item-category="newItemCategory"
       v-model:newItemExpiry="newItemExpiry"
       :categories="categories"
+      :inventory="inventory"
+      @increment-existing="handleIncrementExistingFromModal"
+      @regenerate-barcode="handleRegenerateBarcode"
       @close-category-modal="showCategoryModal = false"
       @save-category="saveNewCategory"
       @close-edit-modal="showEditModal = false"

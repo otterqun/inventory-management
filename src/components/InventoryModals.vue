@@ -1,5 +1,7 @@
 <script setup>
-defineProps({
+import { computed } from 'vue'
+
+const props = defineProps({
   showCategoryModal: Boolean,
   newCategoryName: String,
   showEditModal: Boolean,
@@ -11,10 +13,14 @@ defineProps({
   newItemCategory: String,
   newItemExpiry: String,
   editExpirySelection: String,
-  categories: Array
+  categories: Array,
+  inventory: {
+    type: Array,
+    default: () => []
+  }
 })
 
-defineEmits([
+const emit = defineEmits([
   'close-category-modal',
   'save-category',
   'update:newCategoryName',
@@ -24,11 +30,19 @@ defineEmits([
   'update:editExpirySelection',
   'close-item-modal',
   'save-item',
+  'increment-existing',
+  'regenerate-barcode',
   'update:newItemName',
   'update:newItemCategory',
   'update:newItemExpiry',
   'open-category-modal'
 ])
+
+// Semak sama ada pendingBarcode sudah wujud dalam senarai inventori
+const duplicateItem = computed(() => {
+  if (!props.pendingBarcode) return null
+  return props.inventory.find(i => i.barcode.trim().toLowerCase() === props.pendingBarcode.trim().toLowerCase())
+})
 </script>
 
 <template>
@@ -96,15 +110,43 @@ defineEmits([
       </div>
     </div>
 
-    <!-- Modal Daftar Item Baru -->
+    <!-- Modal Daftar Item Baru Bersama Duplicate Warning -->
     <div v-if="showItemModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
       <div class="bg-white rounded-2xl border border-zinc-200 shadow-xl max-w-sm w-full p-6 space-y-4">
         <div>
           <h3 class="text-sm font-semibold tracking-tight text-zinc-900">Daftar Item Baru</h3>
-          <p class="text-xs text-zinc-500 font-mono">Kod: {{ pendingBarcode }}</p>
+          <div class="flex items-center gap-2 mt-0.5">
+            <span class="text-xs text-zinc-500 font-mono">Kod: {{ pendingBarcode }}</span>
+            <button 
+              v-if="pendingBarcode.startsWith('DIF-')"
+              type="button"
+              @click="$emit('regenerate-barcode')"
+              title="Jana kod rawak lain"
+              class="px-1.5 py-0.5 text-[10px] font-mono bg-zinc-100 hover:bg-zinc-200 text-zinc-700 rounded border border-zinc-200 cursor-pointer transition-colors"
+            >
+              🔄 Jana Lain
+            </button>
+          </div>
         </div>
 
-        <div class="space-y-3 text-xs">
+        <!-- Kad Amaran Kod Bar Pendua -->
+        <div v-if="duplicateItem" class="p-3 bg-amber-50 border border-amber-200 rounded-xl space-y-2">
+          <div class="flex items-center gap-1.5 text-amber-800 text-xs font-semibold">
+            <span>⚠️</span>
+            <span>Kod bar sudah didaftarkan!</span>
+          </div>
+          <p class="text-[11px] text-amber-700">
+            Kod ini milik <strong>{{ duplicateItem.name }}</strong> (Baki stok: {{ duplicateItem.qty }}).
+          </p>
+          <button 
+            @click="$emit('increment-existing', duplicateItem)"
+            class="w-full py-1.5 px-3 bg-amber-600 hover:bg-amber-700 text-white text-xs font-medium rounded-lg transition-colors cursor-pointer"
+          >
+            +1 Kuantiti "{{ duplicateItem.name }}" Sekarang
+          </button>
+        </div>
+
+        <div class="space-y-3 text-xs" :class="{ 'opacity-50 pointer-events-none': duplicateItem }">
           <div>
             <label class="block text-zinc-600 font-mono mb-1">Nama Item</label>
             <input 
@@ -144,7 +186,14 @@ defineEmits([
 
         <div class="flex items-center justify-end gap-2 pt-2 border-t border-zinc-100 font-mono text-xs">
           <button @click="$emit('close-item-modal')" class="px-3 py-1.5 text-zinc-600 hover:text-zinc-900 cursor-pointer">Batal</button>
-          <button @click="$emit('save-item')" class="px-3 py-1.5 bg-zinc-900 text-white rounded-lg hover:bg-zinc-800 cursor-pointer font-sans font-medium">Simpan Item</button>
+          <button 
+            @click="$emit('save-item')" 
+            :disabled="Boolean(duplicateItem)"
+            class="px-3 py-1.5 bg-zinc-900 text-white rounded-lg hover:bg-zinc-800 font-sans font-medium transition-colors"
+            :class="duplicateItem ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'"
+          >
+            Simpan Item
+          </button>
         </div>
       </div>
     </div>
